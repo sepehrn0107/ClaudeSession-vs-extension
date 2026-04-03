@@ -136,13 +136,11 @@ export class TodosView implements vscode.WebviewViewProvider {
     const workspaceRoot = config.get<string>("workspaceRoot", "").trim();
 
     if (!workspaceRoot || !fs.existsSync(workspaceRoot)) {
-      if (this._view) {
-        this._view.webview.html = this._buildErrorHtml(
-          workspaceRoot
-            ? `Workspace root not found: ${workspaceRoot}`
-            : 'Set "claudeSessions.workspaceRoot" in settings to get started',
-        );
-      }
+      this._view.webview.html = this._buildErrorHtml(
+        workspaceRoot
+          ? `Workspace root not found: ${workspaceRoot}`
+          : 'Set "claudeSessions.workspaceRoot" in settings to get started',
+      );
       return;
     }
 
@@ -191,9 +189,7 @@ export class TodosView implements vscode.WebviewViewProvider {
       groups.push({ project: name, todos });
     }
 
-    if (this._view) {
-      this._view.webview.html = buildTodosHtml(groups);
-    }
+    this._view.webview.html = buildTodosHtml(groups);
   }
 
   private _buildErrorHtml(message: string): string {
@@ -207,7 +203,7 @@ export class TodosView implements vscode.WebviewViewProvider {
       color: var(--vscode-descriptionForeground); padding: 16px; }
   </style>
 </head>
-<body><p>${message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p></body>
+<body><p>${escHtml(message)}</p></body>
 </html>`;
   }
 }

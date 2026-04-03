@@ -27,6 +27,11 @@
         {
           "id": "claudeSessionsTree",
           "name": "Sessions"
+        },
+        {
+          "id": "claudeTodosList",
+          "name": "Todos",
+          "type": "webview"
         }
       ]
     },
