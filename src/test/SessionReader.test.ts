@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseSessionLines, slugToPath } from '../SessionReader';
+import { parseSessionLines, slugToPath, groupSessions, readActiveProject, Session } from '../SessionReader';
+import * as path from 'path';
+import * as os from 'os';
+import { mkdtempSync, writeFileSync, unlinkSync, rmdirSync } from 'fs';
 
 describe('parseSessionLines', () => {
   it('extracts startedAt from first timestamp', () => {
@@ -56,5 +59,90 @@ describe('slugToPath', () => {
   it('decodes Linux/Mac slug to Unix path', () => {
     expect(slugToPath('-home-user-workspace'))
       .toBe('/home/user/workspace');
+  });
+});
+
+const ROOT = process.platform === 'win32'
+  ? 'C:\\Users\\test\\workspace'
+  : '/home/user/workspace';
+
+const makeSession = (cwd: string | undefined): Session => ({
+  id: '123',
+  projectSlug: 'test',
+  projectPath: 'test',
+  filePath: 'test.jsonl',
+  startedAt: '',
+  firstUserMessage: '',
+  cwd,
+});
+
+describe('groupSessions', () => {
+  it('assigns session whose cwd equals project root', () => {
+    const map = groupSessions([makeSession(path.join(ROOT, 'toolbox'))], ROOT, ['toolbox']);
+    expect(map.get('toolbox')!.length).toBe(1);
+    expect(map.get('other')!.length).toBe(0);
+  });
+
+  it('assigns session in subdirectory to matching project', () => {
+    const map = groupSessions([makeSession(path.join(ROOT, 'toolbox', 'src'))], ROOT, ['toolbox']);
+    expect(map.get('toolbox')!.length).toBe(1);
+  });
+
+  it('does not match foobar session to foo project', () => {
+    const map = groupSessions([makeSession(path.join(ROOT, 'foobar'))], ROOT, ['foo', 'foobar']);
+    expect(map.get('foo')!.length).toBe(0);
+    expect(map.get('foobar')!.length).toBe(1);
+  });
+
+  it('assigns session with unmatched cwd to "other"', () => {
+    const unmatched = process.platform === 'win32' ? 'C:\\other\\path' : '/other/path';
+    const map = groupSessions([makeSession(unmatched)], ROOT, ['toolbox']);
+    expect(map.get('other')!.length).toBe(1);
+    expect(map.get('toolbox')!.length).toBe(0);
+  });
+
+  it('assigns session with undefined cwd to "other"', () => {
+    const map = groupSessions([makeSession(undefined)], ROOT, ['toolbox']);
+    expect(map.get('other')!.length).toBe(1);
+  });
+
+  it('always initialises all project buckets in the map', () => {
+    const map = groupSessions([], ROOT, ['toolbox', 'gymbro']);
+    expect(map.has('toolbox')).toBe(true);
+    expect(map.has('gymbro')).toBe(true);
+    expect(map.has('other')).toBe(true);
+  });
+});
+
+describe('readActiveProject', () => {
+  it('reads active project name from file', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'claude-sessions-test-'));
+    const file = path.join(dir, 'active.md');
+    writeFileSync(file, 'active: toolbox\nupdated: 2026-01-01\n');
+    expect(readActiveProject(file)).toBe('toolbox');
+    unlinkSync(file);
+    rmdirSync(dir);
+  });
+
+  it('trims whitespace from active project name', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'claude-sessions-test-'));
+    const file = path.join(dir, 'active.md');
+    writeFileSync(file, 'active:   gymbro  \n');
+    expect(readActiveProject(file)).toBe('gymbro');
+    unlinkSync(file);
+    rmdirSync(dir);
+  });
+
+  it('returns null for missing file', () => {
+    expect(readActiveProject('/nonexistent/path/active.md')).toBeNull();
+  });
+
+  it('returns null when file has no active: line', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'claude-sessions-test-'));
+    const file = path.join(dir, 'empty.md');
+    writeFileSync(file, 'just some text\n');
+    expect(readActiveProject(file)).toBeNull();
+    unlinkSync(file);
+    rmdirSync(dir);
   });
 });

@@ -129,6 +129,62 @@ export function readSession(filePath: string): ChatMessage[] {
   return messages;
 }
 
+export function listAllSessions(): Session[] {
+  return listProjects().flatMap((slug) => listSessions(slug));
+}
+
+export function groupSessions(
+  sessions: Session[],
+  workspaceRoot: string,
+  projectNames: string[]
+): Map<string, Session[]> {
+  const map = new Map<string, Session[]>();
+  for (const name of [...projectNames, "other"]) {
+    map.set(name, []);
+  }
+
+  const isWindows = process.platform === "win32";
+  const normalize = (p: string) => {
+    const n = path.normalize(p);
+    return isWindows ? n.toLowerCase() : n;
+  };
+
+  for (const session of sessions) {
+    if (!session.cwd) {
+      map.get("other")!.push(session);
+      continue;
+    }
+
+    const cwd = normalize(session.cwd);
+    let matched = false;
+
+    for (const name of projectNames) {
+      const root = normalize(path.join(workspaceRoot, name));
+      if (cwd === root || cwd.startsWith(root + path.sep)) {
+        map.get(name)!.push(session);
+        matched = true;
+        break;
+      }
+    }
+
+    if (!matched) {
+      map.get("other")!.push(session);
+    }
+  }
+
+  return map;
+}
+
+export function readActiveProject(filePath: string): string | null {
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    const match = content.match(/^active:\s*(.+)$/m);
+    return match?.[1].trim() ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function readLines(filePath: string, maxLines: number): string[] {
   const content = fs.readFileSync(filePath, "utf8");
   return content.split("\n").slice(0, maxLines);
