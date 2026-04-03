@@ -1,13 +1,9 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
 import {
   listAllSessions,
   groupSessions,
   loadStatusMap,
-  StatusSnapshot,
-  TodoItem,
   Session,
 } from "./SessionReader";
 
@@ -107,4 +103,111 @@ ${groupsHtml}
   </script>
 </body>
 </html>`;
+}
+
+export class TodosView implements vscode.WebviewViewProvider {
+  static readonly viewType = "claudeTodosList";
+
+  private _view?: vscode.WebviewView;
+
+  constructor(private readonly _extensionUri: vscode.Uri) {}
+
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    this._view = webviewView;
+    webviewView.webview.options = { enableScripts: true };
+
+    webviewView.webview.onDidReceiveMessage(
+      (msg: { command: string; sessionId: string }) => {
+        if (msg.command === "focusSession") {
+          vscode.commands.executeCommand(
+            "claudeSessions.focusSession",
+            { id: msg.sessionId } as Session,
+          );
+        }
+      },
+    );
+
+    this.refresh();
+  }
+
+  refresh(): void {
+    if (!this._view) return;
+    const config = vscode.workspace.getConfiguration("claudeSessions");
+    const workspaceRoot = config.get<string>("workspaceRoot", "").trim();
+
+    if (!workspaceRoot || !fs.existsSync(workspaceRoot)) {
+      if (this._view) {
+        this._view.webview.html = this._buildErrorHtml(
+          workspaceRoot
+            ? `Workspace root not found: ${workspaceRoot}`
+            : 'Set "claudeSessions.workspaceRoot" in settings to get started',
+        );
+      }
+      return;
+    }
+
+    const statusMap = loadStatusMap();
+    const allSessions = listAllSessions();
+    const projectNames = fs
+      .readdirSync(workspaceRoot, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+
+    // Build sessionId → project lookup
+    const grouped = groupSessions(allSessions, workspaceRoot, projectNames);
+    const sidToProject = new Map<string, string>();
+    for (const [proj, sessions] of grouped) {
+      for (const s of sessions) sidToProject.set(s.id, proj);
+    }
+
+    // Flatten todos from all status snapshots
+    const projectTodos = new Map<string, FlatTodo[]>();
+    for (const [sid, snap] of statusMap) {
+      if (!snap.todos?.length) continue;
+      const project = sidToProject.get(sid) ?? "other";
+      for (const todo of snap.todos) {
+        if (!projectTodos.has(project)) projectTodos.set(project, []);
+        projectTodos.get(project)!.push({
+          content: todo.content,
+          status: todo.status,
+          sessionId: sid,
+          project,
+        });
+      }
+    }
+
+    // Sort within each group: in_progress → pending → completed
+    const statusOrder: Record<FlatTodo["status"], number> = {
+      in_progress: 0,
+      pending: 1,
+      completed: 2,
+    };
+    const groups: ProjectTodoGroup[] = [];
+    for (const name of [...projectNames, "other"]) {
+      const todos = projectTodos.get(name);
+      if (!todos?.length) continue;
+      todos.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+      groups.push({ project: name, todos });
+    }
+
+    if (this._view) {
+      this._view.webview.html = buildTodosHtml(groups);
+    }
+  }
+
+  private _buildErrorHtml(message: string): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+  <style>
+    body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size);
+      color: var(--vscode-descriptionForeground); padding: 16px; }
+  </style>
+</head>
+<body><p>${message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p></body>
+</html>`;
+  }
 }
