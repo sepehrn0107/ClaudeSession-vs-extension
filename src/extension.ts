@@ -6,6 +6,7 @@ import { execSync } from "child_process";
 import { SessionsProvider } from "./SessionsProvider";
 import { SessionPanel } from "./SessionPanel";
 import { Session, loadSessionPidMap } from "./SessionReader";
+import { TodosView } from "./TodosView";
 
 function debounce(fn: () => void, ms: number): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -61,6 +62,11 @@ export function activate(context: vscode.ExtensionContext): void {
       : undefined;
   });
 
+  const todosProvider = new TodosView(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(TodosView.viewType, todosProvider),
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("claudeSessions.refresh", () => {
       provider.refresh();
@@ -89,7 +95,10 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  const debouncedRefresh = debounce(() => provider.refresh(), 300);
+  const debouncedRefresh = debounce(() => {
+    provider.refresh();
+    todosProvider.refresh();
+  }, 300);
 
   // Watch ~/.claude/projects for new project folders (non-recursive — polling covers new sessions)
   const watchDir = path.join(os.homedir(), ".claude", "projects");
@@ -106,7 +115,10 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   // Poll every 5 s as fallback (fs.watch misses rapid consecutive writes on Windows)
-  const pollTimer = setInterval(() => provider.refresh(), 5000);
+  const pollTimer = setInterval(() => {
+    provider.refresh();
+    todosProvider.refresh();
+  }, 5000);
   context.subscriptions.push({ dispose: () => clearInterval(pollTimer) });
 
   // Initial load — builds status map and fires onDidChangeTreeData → sets badge

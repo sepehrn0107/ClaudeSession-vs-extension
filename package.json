@@ -2,7 +2,7 @@
   "name": "claude-sessions",
   "displayName": "Claude Sessions",
   "description": "Browse your local Claude Code session history",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "sepehrn",
   "engines": {
     "vscode": "^1.85.0"
@@ -27,6 +27,11 @@
         {
           "id": "claudeSessionsTree",
           "name": "Sessions"
+        },
+        {
+          "id": "claudeTodosList",
+          "name": "Todos",
+          "type": "webview"
         }
       ]
     },

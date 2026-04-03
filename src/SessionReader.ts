@@ -246,3 +246,57 @@ function extractLastText(content: unknown): string {
   }
   return "";
 }
+
+export interface TodoItem {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm: string;
+}
+
+export interface StatusSnapshot {
+  pendingInput?: boolean;
+  todos?: TodoItem[];
+  [key: string]: unknown;
+}
+
+function loadSessionPidMapFrom(
+  sessionsDir: string = path.join(os.homedir(), ".claude", "sessions"),
+): Map<string, number> {
+  const map = new Map<string, number>();
+  if (!fs.existsSync(sessionsDir)) return map;
+  for (const file of fs.readdirSync(sessionsDir).filter((f) => f.endsWith(".json"))) {
+    const pid = parseInt(file.replace(".json", ""), 10);
+    if (isNaN(pid)) continue;
+    try {
+      const meta = JSON.parse(fs.readFileSync(path.join(sessionsDir, file), "utf8"));
+      if (meta.sessionId) map.set(meta.sessionId, pid);
+    } catch { /* skip */ }
+  }
+  return map;
+}
+
+export function loadStatusMap(
+  statusDir: string = path.join(os.homedir(), ".claude", "sessions-status"),
+  sessionsDir: string = path.join(os.homedir(), ".claude", "sessions"),
+): Map<string, StatusSnapshot> {
+  const pidMap = loadSessionPidMapFrom(sessionsDir);
+  const pidToSid = new Map<number, string>();
+  for (const [sid, pid] of pidMap) pidToSid.set(pid, sid);
+
+  const result = new Map<string, StatusSnapshot>();
+  if (!fs.existsSync(statusDir)) return result;
+
+  for (const file of fs.readdirSync(statusDir).filter((f) => f.endsWith(".json"))) {
+    const pid = parseInt(file.replace(".json", ""), 10);
+    if (isNaN(pid)) continue;
+    const sid = pidToSid.get(pid);
+    if (!sid) continue;
+    try {
+      const snap = JSON.parse(fs.readFileSync(path.join(statusDir, file), "utf8"));
+      result.set(sid, snap);
+    } catch {
+      /* skip malformed */
+    }
+  }
+  return result;
+}
