@@ -275,6 +275,46 @@ function loadSessionPidMapFrom(
   return map;
 }
 
+function cwdToProjectKey(cwd: string): string {
+  return cwd
+    .replace(/^[A-Za-z]/, (d) => d.toLowerCase())
+    .replace(/:/g, "-")
+    .replace(/[/\\]+/g, "-");
+}
+
+function readLatestTodosFromJsonl(
+  sessionId: string,
+  projectKey: string,
+  projectsDir: string,
+): TodoItem[] | undefined {
+  const jsonlPath = path.join(projectsDir, projectKey, `${sessionId}.jsonl`);
+  if (!fs.existsSync(jsonlPath)) return undefined;
+
+  try {
+    const content = fs.readFileSync(jsonlPath, "utf8");
+    const lines = content.split("\n");
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (!line.includes("TodoWrite")) continue;
+      try {
+        const entry = JSON.parse(line);
+        const blocks = entry?.message?.content;
+        if (!Array.isArray(blocks)) continue;
+        for (const block of blocks) {
+          if (block?.type === "tool_use" && block?.name === "TodoWrite") {
+            const todos = block?.input?.todos;
+            if (Array.isArray(todos)) return todos as TodoItem[];
+          }
+        }
+      } catch { /* skip malformed line */ }
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function loadStatusMap(
   statusDir: string = path.join(os.homedir(), ".claude", "sessions-status"),
   sessionsDir: string = path.join(os.homedir(), ".claude", "sessions"),
@@ -284,19 +324,40 @@ export function loadStatusMap(
   for (const [sid, pid] of pidMap) pidToSid.set(pid, sid);
 
   const result = new Map<string, StatusSnapshot>();
-  if (!fs.existsSync(statusDir)) return result;
 
-  for (const file of fs.readdirSync(statusDir).filter((f) => f.endsWith(".json"))) {
-    const pid = parseInt(file.replace(".json", ""), 10);
-    if (isNaN(pid)) continue;
-    const sid = pidToSid.get(pid);
-    if (!sid) continue;
-    try {
-      const snap = JSON.parse(fs.readFileSync(path.join(statusDir, file), "utf8"));
-      result.set(sid, snap);
-    } catch {
-      /* skip malformed */
+  // Load from sessions-status files (terminal sessions via statusLine hook)
+  if (fs.existsSync(statusDir)) {
+    for (const file of fs.readdirSync(statusDir).filter((f) => f.endsWith(".json"))) {
+      const pid = parseInt(file.replace(".json", ""), 10);
+      if (isNaN(pid)) continue;
+      const sid = pidToSid.get(pid);
+      if (!sid) continue;
+      try {
+        const snap = JSON.parse(fs.readFileSync(path.join(statusDir, file), "utf8"));
+        result.set(sid, snap);
+      } catch { /* skip malformed */ }
     }
   }
+
+  // Fallback: read todos from JSONL for sessions without todos in status files
+  // (covers claude-vscode sessions where PostToolUse hooks don't fire)
+  const projectsDir = path.join(os.homedir(), ".claude", "projects");
+  if (fs.existsSync(sessionsDir) && fs.existsSync(projectsDir)) {
+    for (const file of fs.readdirSync(sessionsDir).filter((f) => f.endsWith(".json"))) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(path.join(sessionsDir, file), "utf8"));
+        const { sessionId, cwd } = meta as { sessionId?: string; cwd?: string };
+        if (!sessionId || !cwd) continue;
+        const existing = result.get(sessionId);
+        if (existing?.todos?.length) continue; // already have todos from status file
+        const projectKey = cwdToProjectKey(cwd);
+        const todos = readLatestTodosFromJsonl(sessionId, projectKey, projectsDir);
+        if (todos?.length) {
+          result.set(sessionId, { ...existing, todos });
+        }
+      } catch { /* skip malformed */ }
+    }
+  }
+
   return result;
 }
