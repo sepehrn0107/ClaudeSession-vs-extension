@@ -6,6 +6,7 @@ import { execSync } from "child_process";
 import { SessionListView } from "./SessionListView";
 import { SessionPanel } from "./SessionPanel";
 import { Session, loadSessionPidMap } from "./SessionReader";
+import { TodosView } from "./TodosView";
 
 function debounce(fn: () => void, ms: number): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -58,6 +59,11 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
+  const todosProvider = new TodosView(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(TodosView.viewType, todosProvider),
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("claudeSessions.refresh", () => {
       provider.refresh();
@@ -91,7 +97,10 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  const debouncedRefresh = debounce(() => provider.refresh(), 300);
+  const debouncedRefresh = debounce(() => {
+    provider.refresh();
+    todosProvider.refresh();
+  }, 300);
 
   const watchDir = path.join(os.homedir(), ".claude", "projects");
   if (fs.existsSync(watchDir)) {
@@ -99,13 +108,21 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push({ dispose: () => watcher.close() });
   }
 
+  // Watch ~/.claude/sessions-status for live status changes.
+  // Fall back to watching the parent dir so we catch the first write if the
+  // sessions-status directory doesn't exist yet when the extension activates.
   const statusDir = path.join(os.homedir(), ".claude", "sessions-status");
-  if (fs.existsSync(statusDir)) {
-    const statusWatcher = fs.watch(statusDir, debouncedRefresh);
-    context.subscriptions.push({ dispose: () => statusWatcher.close() });
-  }
+  const statusWatchTarget = fs.existsSync(statusDir)
+    ? statusDir
+    : path.join(os.homedir(), ".claude");
+  const statusWatcher = fs.watch(statusWatchTarget, debouncedRefresh);
+  context.subscriptions.push({ dispose: () => statusWatcher.close() });
 
-  const pollTimer = setInterval(() => provider.refresh(), 5000);
+  // Poll every 5 s as fallback (fs.watch misses rapid consecutive writes on Windows)
+  const pollTimer = setInterval(() => {
+    provider.refresh();
+    todosProvider.refresh();
+  }, 5000);
   context.subscriptions.push({ dispose: () => clearInterval(pollTimer) });
 }
 
