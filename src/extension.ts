@@ -7,6 +7,14 @@ import { SessionsProvider } from "./SessionsProvider";
 import { SessionPanel } from "./SessionPanel";
 import { Session, loadSessionPidMap } from "./SessionReader";
 
+function debounce(fn: () => void, ms: number): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(fn, ms);
+  };
+}
+
 async function findTerminalForPid(claudePid: number): Promise<vscode.Terminal | undefined> {
   let shellPid: number | undefined;
   try {
@@ -81,17 +89,19 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Watch ~/.claude/projects for new sessions
+  const debouncedRefresh = debounce(() => provider.refresh(), 300);
+
+  // Watch ~/.claude/projects for new project folders (non-recursive — polling covers new sessions)
   const watchDir = path.join(os.homedir(), ".claude", "projects");
   if (fs.existsSync(watchDir)) {
-    const watcher = fs.watch(watchDir, { recursive: true }, () => provider.refresh());
+    const watcher = fs.watch(watchDir, debouncedRefresh);
     context.subscriptions.push({ dispose: () => watcher.close() });
   }
 
   // Watch ~/.claude/sessions-status for live pendingInput changes
   const statusDir = path.join(os.homedir(), ".claude", "sessions-status");
   if (fs.existsSync(statusDir)) {
-    const statusWatcher = fs.watch(statusDir, () => provider.refresh());
+    const statusWatcher = fs.watch(statusDir, debouncedRefresh);
     context.subscriptions.push({ dispose: () => statusWatcher.close() });
   }
 
