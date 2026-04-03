@@ -25,8 +25,9 @@
     "views": {
       "claude-sessions": [
         {
-          "id": "claudeSessionsTree",
-          "name": "Sessions"
+          "id": "claudeSessionsList",
+          "name": "Sessions",
+          "type": "webview"
         },
         {
           "id": "claudeTodosList",
@@ -54,7 +55,7 @@
       "view/title": [
         {
           "command": "claudeSessions.refresh",
-          "when": "view == claudeSessionsTree",
+          "when": "view == claudeSessionsList",
           "group": "navigation"
         }
       ]
