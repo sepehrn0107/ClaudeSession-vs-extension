@@ -2,7 +2,7 @@
   "name": "claude-sessions",
   "displayName": "Claude Sessions",
   "description": "Browse your local Claude Code session history",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "sepehrn",
   "engines": {
     "vscode": "^1.85.0"
@@ -61,7 +61,7 @@
         "claudeSessions.activeProjectFile": {
           "type": "string",
           "default": "",
-          "description": "Optional. Path to a file containing 'active: <name>' — that project group will be expanded by default."
+          "description": "Optional. Path to a file containing 'active: <name>' \u00e2\u20ac\u201d that project group will be expanded by default."
         }
       }
     }
