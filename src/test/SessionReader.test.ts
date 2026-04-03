@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { parseSessionLines, slugToPath, groupSessions, readActiveProject, Session } from '../SessionReader';
 import * as path from 'path';
 import * as os from 'os';
@@ -182,5 +182,69 @@ describe('readActiveProject', () => {
     expect(readActiveProject(file)).toBeNull();
     unlinkSync(file);
     rmdirSync(dir);
+  });
+});
+
+import { mkdirSync, rmSync } from 'fs';
+import { join } from 'path';
+import { loadStatusMap } from '../SessionReader';
+
+describe('loadStatusMap', () => {
+  let tmpDir: string;
+  let statusDir: string;
+  let sessionsDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(os.tmpdir(), 'claude-test-'));
+    statusDir = join(tmpDir, 'sessions-status');
+    sessionsDir = join(tmpDir, 'sessions');
+    mkdirSync(statusDir, { recursive: true });
+    mkdirSync(sessionsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns empty map when statusDir does not exist', () => {
+    const missing = join(tmpDir, 'nonexistent');
+    const result = loadStatusMap(missing, sessionsDir);
+    expect(result.size).toBe(0);
+  });
+
+  it('maps sessionId to snapshot with todos', () => {
+    const pid = 12345;
+    const sessionId = 'abc-123';
+    // Write sessions/<pid>.json so pidMap resolves sessionId
+    writeFileSync(join(sessionsDir, `${pid}.json`), JSON.stringify({ pid, sessionId }));
+    // Write sessions-status/<pid>.json with todos
+    const snap = {
+      todos: [{ content: 'Write test', status: 'pending', activeForm: 'Writing test' }],
+      pendingInput: false,
+    };
+    writeFileSync(join(statusDir, `${pid}.json`), JSON.stringify(snap));
+
+    const result = loadStatusMap(statusDir, sessionsDir);
+    expect(result.size).toBe(1);
+    expect(result.get(sessionId)?.todos).toHaveLength(1);
+    expect(result.get(sessionId)?.todos?.[0].content).toBe('Write test');
+  });
+
+  it('skips malformed JSON files without throwing', () => {
+    const pid = 99999;
+    const sessionId = 'xyz-999';
+    writeFileSync(join(sessionsDir, `${pid}.json`), JSON.stringify({ pid, sessionId }));
+    writeFileSync(join(statusDir, `${pid}.json`), 'not-json{{{');
+
+    expect(() => loadStatusMap(statusDir, sessionsDir)).not.toThrow();
+    const result = loadStatusMap(statusDir, sessionsDir);
+    expect(result.size).toBe(0);
+  });
+
+  it('skips status files with no matching session', () => {
+    // No entry in sessionsDir for this pid
+    writeFileSync(join(statusDir, '77777.json'), JSON.stringify({ pendingInput: true }));
+    const result = loadStatusMap(statusDir, sessionsDir);
+    expect(result.size).toBe(0);
   });
 });
