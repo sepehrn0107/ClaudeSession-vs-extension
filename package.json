@@ -2,7 +2,7 @@
   "name": "claude-sessions",
   "displayName": "Claude Sessions",
   "description": "Browse your local Claude Code session history",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "publisher": "sepehrn",
   "engines": {
     "vscode": "^1.85.0"
@@ -25,8 +25,9 @@
     "views": {
       "claude-sessions": [
         {
-          "id": "claudeSessionsTree",
-          "name": "Sessions"
+          "id": "claudeSessionsList",
+          "name": "Sessions",
+          "type": "webview"
         }
       ]
     },
@@ -49,7 +50,7 @@
       "view/title": [
         {
           "command": "claudeSessions.refresh",
-          "when": "view == claudeSessionsTree",
+          "when": "view == claudeSessionsList",
           "group": "navigation"
         }
       ]
