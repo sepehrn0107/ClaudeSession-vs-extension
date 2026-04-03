@@ -65,8 +65,11 @@ export function parseSessionLines(lines: string[]): ParsedSession {
       }
       if (obj.type === "user" && obj.message?.content) {
         const text = extractText(obj.message.content);
-        if (firstUserMessage === "(empty)" && text.trim()) {
-          firstUserMessage = text.slice(0, 80).trim();
+        if (firstUserMessage === "(empty)") {
+          const lastText = extractLastText(obj.message.content);
+          if (lastText.trim()) {
+            firstUserMessage = lastText.slice(0, 80).trim();
+          }
         }
         if (!hintPath) {
           const m = text.match(IDE_FILE_RE);
@@ -229,6 +232,17 @@ function extractText(content: unknown): string {
       .filter((c): c is { type: string; text: string } => c?.type === "text")
       .map((c) => c.text)
       .join("\n");
+  }
+  return "";
+}
+
+function extractLastText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const textBlocks = content
+      .filter((c): c is { type: string; text: string } => c?.type === "text")
+      .map((c) => c.text);
+    return textBlocks[textBlocks.length - 1] ?? "";
   }
   return "";
 }
